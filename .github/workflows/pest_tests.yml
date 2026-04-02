@@ -83,13 +83,19 @@ jobs:
           php artisan dam-package:install
           php artisan optimize:clear
 
+      - name: Reset database
+        working-directory: core
+        run: php artisan migrate:fresh --seed
+          
       - name: Create storage link
         working-directory: core
         run: php artisan storage:link
 
-      - name: Seed DAM directories
+      - name: Copy test fixtures
         working-directory: core
-        run: php artisan db:seed --class="Webkul\DAM\Database\Seeders\DirectoryTableSeeder"
+        run: |
+            mkdir -p public/storage/Fixtures
+            cp packages/Webkul/DAM/tests/Fixtures/sample.jpg public/storage/Fixtures/
 
       - name: Run DAM Tests
         working-directory: core
