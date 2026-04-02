@@ -85,4 +85,4 @@ jobs:
 
       - name: Run DAM Tests
         working-directory: core
-        run: vendor/bin/pest vendor/unopim/dam-connector/tests --colors=always
+        run: vendor/bin/pest vendor/unopim/dam/tests --colors=always
