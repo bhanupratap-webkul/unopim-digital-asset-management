@@ -75,27 +75,16 @@ jobs:
       - name: Bind DAM Tests to Pest
         working-directory: core
         run: |
-          echo "uses(Webkul\Admin\Tests\AdminTestCase::class)->in('../packages/Webkul/DAM/tests');" >> tests/Pest.php
-            
+            echo "uses(
+                Webkul\Admin\Tests\AdminTestCase::class,
+                Illuminate\Foundation\Testing\RefreshDatabase::class
+            )->in('../packages/Webkul/DAM/tests');" >> tests/Pest.php
+
       - name: Install DAM Package
         working-directory: core
         run: |
           php artisan dam-package:install
           php artisan optimize:clear
-
-      - name: Reset database
-        working-directory: core
-        run: php artisan migrate:fresh --seed
-          
-      - name: Create storage link
-        working-directory: core
-        run: php artisan storage:link
-
-      - name: Copy test fixtures
-        working-directory: core
-        run: |
-            mkdir -p public/storage/Fixtures
-            cp packages/Webkul/DAM/tests/Fixtures/sample.jpg public/storage/Fixtures/
 
       - name: Run DAM Tests
         working-directory: core
