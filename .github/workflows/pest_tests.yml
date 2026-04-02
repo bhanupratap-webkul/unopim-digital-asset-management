@@ -83,6 +83,14 @@ jobs:
           php artisan dam-package:install
           php artisan optimize:clear
 
+      - name: Create storage link
+        working-directory: core
+        run: php artisan storage:link
+
+      - name: Seed DAM directories
+        working-directory: core
+        run: php artisan db:seed --class="Webkul\DAM\Database\Seeders\DirectoryTableSeeder"
+
       - name: Run DAM Tests
         working-directory: core
         run: vendor/bin/pest vendor/unopim/dam/tests --colors=always
