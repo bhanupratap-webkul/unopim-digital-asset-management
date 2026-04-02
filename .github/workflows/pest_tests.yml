@@ -75,11 +75,8 @@ jobs:
       - name: Bind DAM Tests to Pest
         working-directory: core
         run: |
-            echo "uses(
-                Webkul\Admin\Tests\AdminTestCase::class,
-                Illuminate\Foundation\Testing\RefreshDatabase::class
-            )->in('../packages/Webkul/DAM/tests');" >> tests/Pest.php
-
+          echo "uses(Webkul\Admin\Tests\AdminTestCase::class)->in('../packages/Webkul/DAM/tests');" >> tests/Pest.php
+            
       - name: Install DAM Package
         working-directory: core
         run: |
