@@ -83,6 +83,10 @@ jobs:
           php artisan dam-package:install
           php artisan optimize:clear
 
+      - name: Reset Database
+        working-directory: core
+        run: php artisan migrate:fresh --seed
+
       - name: Run DAM Tests
         working-directory: core
         run: vendor/bin/pest vendor/unopim/dam/tests --colors=always
