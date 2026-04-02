@@ -1,0 +1,148 @@
+name: DAM Playwright Tests
+
+on: [push, pull_request]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  FORCE_COLOR: 1
+
+jobs:
+  playwright_tests:
+    runs-on: ubuntu-24.04
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: unopim
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=5s
+          --health-timeout=3s
+          --health-retries=3
+
+    steps:
+      - name: Checkout DAM
+        uses: actions/checkout@v5
+        with:
+          path: dam
+
+      - name: Setup Node
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: 8.3
+          extensions: curl, fileinfo, gd, intl, mbstring, openssl, pdo, pdo_mysql, tokenizer, zip
+          tools: composer:v2
+
+      - name: Clone UnoPim
+        run: git clone -b 1.0 https://github.com/unopim/unopim.git
+
+      - name: Copy DAM package
+        run: |
+          mkdir -p unopim/packages/Webkul/DAM
+          cp -r dam/* unopim/packages/Webkul/DAM/
+
+      - name: Install dependencies
+        working-directory: unopim
+        run: composer install --no-interaction --prefer-dist
+
+      - name: Setup env
+        working-directory: unopim
+        run: |
+          cp .env.example .env
+          sed -i "s|APP_URL=.*|APP_URL=http://127.0.0.1:8000|" .env
+          sed -i "s|DB_HOST=.*|DB_HOST=127.0.0.1|" .env
+          sed -i "s|DB_PORT=.*|DB_PORT=3306|" .env
+          sed -i "s|DB_DATABASE=.*|DB_DATABASE=unopim|" .env
+          sed -i "s|DB_USERNAME=.*|DB_USERNAME=root|" .env
+          sed -i "s|DB_PASSWORD=.*|DB_PASSWORD=root|" .env
+
+      - name: Install UnoPim
+        working-directory: unopim
+        run: php artisan unopim:install --skip-env-check --skip-admin-creation
+
+      - name: Register DAM
+        working-directory: unopim
+        run: |
+          sed -i '/Webkul\\User\\Providers\\UserServiceProvider::class/a \        Webkul\\DAM\\Providers\\DAMServiceProvider::class,' config/app.php
+          sed -i '/"psr-4": {/a \        "Webkul\\\\DAM\\\\": "packages/Webkul/DAM/src",' composer.json
+          composer dump-autoload
+
+      - name: Install DAM
+        working-directory: unopim
+        run: |
+          php artisan optimize:clear
+          php artisan migrate
+          php artisan vendor:publish --provider="Webkul\DAM\Providers\DAMServiceProvider"
+          php artisan db:seed --class="Webkul\DAM\Database\Seeders\DirectoryTableSeeder"
+
+      - name: Setup Nginx + PHP-FPM
+        working-directory: unopim
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y nginx
+
+          PHP_VERSION=$(php -r 'echo PHP_MAJOR_VERSION.".".PHP_MINOR_VERSION;')
+          FPM_SOCK="/run/php/php${PHP_VERSION}-fpm.sock"
+
+          sudo sed -i "s|listen = .*|listen = ${FPM_SOCK}|" /etc/php/${PHP_VERSION}/fpm/pool.d/www.conf
+
+          sudo tee /etc/nginx/sites-available/unopim > /dev/null <<NGINX
+          server {
+              listen 8000;
+              server_name localhost;
+              root $(pwd)/public;
+              index index.php;
+
+              location / {
+                  try_files \$uri \$uri/ /index.php?\$query_string;
+              }
+
+              location ~ \.php$ {
+                  fastcgi_pass unix:${FPM_SOCK};
+                  fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
+                  include fastcgi_params;
+              }
+          }
+          NGINX
+
+          sudo ln -sf /etc/nginx/sites-available/unopim /etc/nginx/sites-enabled/unopim
+          sudo rm -f /etc/nginx/sites-enabled/default
+
+          sudo service php${PHP_VERSION}-fpm start
+          sudo service nginx start
+
+          php artisan queue:work > /tmp/queue.log 2>&1 &
+
+          timeout 30 bash -c 'until curl -s http://127.0.0.1:8000; do sleep 1; done'
+
+      - name: Install Playwright
+        working-directory: unopim/packages/Webkul/DAM/tests/e2e-pw
+        run: |
+          npm install
+          npx playwright install --with-deps
+
+      - name: Run tests
+        working-directory: unopim/packages/Webkul/DAM/tests/e2e-pw
+        run: npx playwright test
+
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@v5
+        with:
+          name: playwright-report
+          path: unopim/packages/Webkul/DAM/tests/e2e-pw/playwright-report
